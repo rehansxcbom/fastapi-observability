@@ -3,3 +3,6 @@ uvicorn
 opentelemetry-distro
 opentelemetry-exporter-otlp
 opentelemetry-instrumentation-fastapi
+opentelemetry-exporter-prometheus
+pytest
+httpx

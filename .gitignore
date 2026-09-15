@@ -1,4 +1,29 @@
+# Python caches
 __pycache__/
-*.pyc
+*.py[cod]
+*$py.class
+
+# Virtual environments (Includes uv's default .venv)
 venv/
+.venv/
+env/
 .env
+
+# Package management and builds
+build/
+dist/
+*.egg-info/
+.eggs/
+
+# Testing and Linting
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Editor / IDE
+*.swp
+*.swo
+
+# OS specific
+.DS_Store
+Thumbs.db

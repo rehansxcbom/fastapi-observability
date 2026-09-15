@@ -6,7 +6,7 @@ app = FastAPI()
 
 @app.get("/")
 def read_root():
-    return {"message": "Hello, telemetry"}
+    return {"message": "Hello, telemetry!"}
 
 
 FastAPIInstrumentor.instrument_app(app)
