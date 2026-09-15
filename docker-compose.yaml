@@ -7,8 +7,10 @@ services:
       - OTEL_SERVICE_NAME=my-fastapi-service
       - OTEL_EXPORTER_OTLP_ENDPOINT=http://tempo:4317
       - OTEL_METRICS_EXPORTER=prometheus
+      - DB_PASSWORD=${DB_PASSWORD}
     depends_on:
-      - tempo
+      timescaledb:
+        condition: service_healthy
 
   tempo:
     image: grafana/tempo:latest
@@ -51,3 +53,22 @@ services:
       - ./etc/promtail/promtail.yml:/etc/promtail/config.yml
     depends_on:
       - loki
+
+  timescaledb:
+    image: timescale/timescaledb:latest-pg15
+    environment:
+      - POSTGRES_USER=admin
+      - POSTGRES_PASSWORD=${DB_PASSWORD}
+      - POSTGRES_DB=timeseries
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - timescaledb_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER} -d ${DB_NAME}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  timescaledb_data:
