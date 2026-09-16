@@ -5,27 +5,54 @@ services:
       - "127.0.0.1:8000:8000"
     environment:
       - OTEL_SERVICE_NAME=my-fastapi-service
-      - OTEL_EXPORTER_OTLP_ENDPOINT=http://tempo:4317
-      - OTEL_METRICS_EXPORTER=prometheus
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4317
+      - DB_USER=${DB_USER}
       - DB_PASSWORD=${DB_PASSWORD}
+      - DB_NAME=${DB_NAME}
     depends_on:
       timescaledb:
         condition: service_healthy
+      otel-collector:
+        condition: service_started
+    restart: unless-stopped
+    cap_drop:
+      - ALL
+    deploy:
+      resources:
+        limits:
+          cpus: '0.50'
+          memory: 512M
+
+  otel-collector:
+    image: otel/opentelemetry-collector:latest
+    command: ["--config=/etc/otel-collector-config.yaml"]
+    volumes:
+      - ./etc/otel-collector/otel-collector-config.yaml:/etc/otel-collector-config.yaml
+    ports:
+      - "127.0.0.1:4317:4317"
+      - "127.0.0.1:8889:8889"
+    depends_on:
+      tempo:
+        condition: service_started
+    restart: unless-stopped
 
   tempo:
     image: grafana/tempo:latest
     command: [ "-config.file=/etc/tempo.yml" ]
     volumes:
       - ./etc/tempo/tempo.yml:/etc/tempo.yml
+      - tempo_data:/tmp/tempo/blocks
     ports:
       - "127.0.0.1:3200:3200"
-      - "127.0.0.1:4317:4317"
-      - "127.0.0.1:4318:4318"
+    restart: unless-stopped
 
   grafana:
     image: grafana/grafana:latest
+    volumes:
+      - grafana_data:/var/lib/grafana
     ports:
       - "127.0.0.1:3000:3000"
+    restart: unless-stopped
 
   prometheus:
     image: prom/prometheus:latest
@@ -33,16 +60,20 @@ services:
       - "--config.file=/etc/prometheus/prometheus.yml"
     volumes:
       - ./etc/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus
     ports:
       - "127.0.0.1:9090:9090"
+    restart: unless-stopped
 
   loki:
     image: grafana/loki:latest
     command: -config.file=/etc/loki/local-config.yaml
     volumes:
       - ./etc/loki/loki.yml:/etc/loki/local-config.yaml
+      - loki_data:/tmp/loki
     ports:
       - "127.0.0.1:3100:3100"
+    restart: unless-stopped
 
   promtail:
     image: grafana/promtail:latest
@@ -52,14 +83,16 @@ services:
       - /var/lib/docker/containers:/var/lib/docker/containers:ro
       - ./etc/promtail/promtail.yml:/etc/promtail/config.yml
     depends_on:
-      - loki
+      loki:
+        condition: service_started
+    restart: unless-stopped
 
   timescaledb:
     image: timescale/timescaledb:latest-pg15
     environment:
-      - POSTGRES_USER=admin
+      - POSTGRES_USER=${DB_USER}
       - POSTGRES_PASSWORD=${DB_PASSWORD}
-      - POSTGRES_DB=timeseries
+      - POSTGRES_DB=${DB_NAME}
     ports:
       - "127.0.0.1:5432:5432"
     volumes:
@@ -69,6 +102,11 @@ services:
       interval: 5s
       timeout: 5s
       retries: 5
+    restart: unless-stopped
 
 volumes:
   timescaledb_data:
+  grafana_data:
+  prometheus_data:
+  loki_data:
+  tempo_data:

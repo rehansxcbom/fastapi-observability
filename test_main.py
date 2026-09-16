@@ -1,41 +1,67 @@
-from unittest.mock import patch
+from unittest.mock import AsyncMock, MagicMock
 
 from fastapi.testclient import TestClient
+from sqlalchemy.exc import OperationalError
 
-# 1. Mock the database engine and session BEFORE importing the app.
-# This prevents the FastAPI 'lifespan' from crashing when it tries
-# to connect to TimescaleDB during the test setup.
-with patch("main.engine"), patch("main.Session"):
-    from main import app
+from main import app, get_session
 
 client = TestClient(app)
 
 
-def test_read_item():
-    """Test the standard GET endpoint"""
-    response = client.get("/items/42")
-
+def test_read_root():
+    """Test the standard GET health endpoint"""
+    response = client.get("/")
     assert response.status_code == 200
-    assert response.json() == {"item_id": 42, "status": "Found"}
+    assert response.json() == {"message": "Hello, telemetry!"}
 
 
-@patch("main.Session")
-def test_record_metric(mock_session):
+def test_record_metrics_success():
     """Test the POST endpoint and verify database interactions"""
+    mock_session = AsyncMock()
+    mock_session.add_all = MagicMock()
 
-    # Setup our fake database session
-    mock_db = mock_session.return_value.__enter__.return_value
+    app.dependency_overrides[get_session] = lambda: mock_session
 
-    # Test payload
-    payload = {"server_id": "test-node-01", "cpu_utilization": 55.5}
+    response = client.post(
+        "/metrics/", json=[{"server_id": "api-node-01", "cpu_utilization": 50.0}]
+    )
 
-    # Make the request
-    response = client.post("/metrics/", json=payload)
+    assert response.status_code == 201
+    assert response.json() == {"status": "1 metrics recorded successfully"}
 
-    # Assert the API returned the correct response
-    assert response.status_code == 200
-    assert response.json() == {"status": "Metric recorded successfully"}
+    mock_session.add_all.assert_called_once()
+    mock_session.commit.assert_called_once()
+    app.dependency_overrides.clear()
 
-    # Assert our code actually attempted to save the data to the database!
-    mock_db.add.assert_called_once()
-    mock_db.commit.assert_called_once()
+
+def test_record_metrics_db_failure_is_masked():
+    """Test that underlying database crashes do not leak sensitive SQL data to users"""
+    mock_session = AsyncMock()
+    mock_session.add_all = MagicMock()
+    mock_session.commit.side_effect = OperationalError("DB is down", [], None)
+
+    app.dependency_overrides[get_session] = lambda: mock_session
+
+    response = client.post(
+        "/metrics/", json=[{"server_id": "api-node-01", "cpu_utilization": 50.0}]
+    )
+
+    assert response.status_code == 500
+    assert "Internal server error" in response.json()["detail"]
+    app.dependency_overrides.clear()
+
+
+def test_record_metrics_validation_error():
+    """Test that Pydantic properly blocks physically impossible CPU metrics"""
+    mock_session = AsyncMock()
+    mock_session.add_all = MagicMock()
+    app.dependency_overrides[get_session] = lambda: mock_session
+
+    # We trigger a 422 by sending an impossible CPU percentage (150.0)
+    response = client.post(
+        "/metrics/", json=[{"server_id": "api-node-01", "cpu_utilization": 150.0}]
+    )
+
+    assert response.status_code == 422
+    assert "cpu_utilization" in response.text
+    app.dependency_overrides.clear()

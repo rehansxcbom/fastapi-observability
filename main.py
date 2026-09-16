@@ -1,68 +1,133 @@
+import logging
 import os
 from contextlib import asynccontextmanager
-from datetime import datetime
+from datetime import datetime, timezone
+from typing import Annotated
 
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI, Request
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
 from opentelemetry.instrumentation.sqlalchemy import SQLAlchemyInstrumentor
-from sqlmodel import Field, Session, SQLModel, create_engine, text
+from sqlalchemy.exc import OperationalError, SQLAlchemyError
+from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
+from sqlmodel import Field, SQLModel, text
 
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+# Diskless secrets injected via environment
 USER = os.getenv("DB_USER", "admin")
 PASSWORD = os.getenv("DB_PASSWORD", "secretpassword")
 DB_NAME = os.getenv("DB_NAME", "timeseries")
-HOST = os.getenv("DB_HOST", "timescaledb")  # Uses Docker service name
+HOST = os.getenv("DB_HOST", "timescaledb")
 
-DATABASE_URL = f"postgresql://{USER}:{PASSWORD}@{HOST}:5432/{DB_NAME}"
-engine = create_engine(DATABASE_URL)
+# Async connection string
+DATABASE_URL = f"postgresql+asyncpg://{USER}:{PASSWORD}@{HOST}:5432/{DB_NAME}"
 
-SQLAlchemyInstrumentor().instrument(engine=engine)
+# Connection pool optimized for throughput and resilience
+engine = create_async_engine(DATABASE_URL, pool_pre_ping=True, pool_recycle=3600)
 
-app = FastAPI()
+# Instrument the sync engine under the hood for traces
+SQLAlchemyInstrumentor().instrument(engine=engine.sync_engine)
+
+# ==========================================
+# ENTERPRISE MODEL SEPARATION
+# ==========================================
 
 
-@app.get("/")
-def read_root():
-    return {"message": "Hello, telemetry!"}
+# 1. Base Model: Holds fields common to all layers
+class ServerMetricBase(SQLModel):
+    server_id: str = Field(primary_key=True)
+    cpu_utilization: float = Field(
+        ge=0.0, le=100.0, description="Must be between 0 and 100"
+    )
 
 
-# Define the Time-Series Data Model
-class ServerMetric(SQLModel, table=True):
+# 2. Create Model: Used exclusively by FastAPI for strict incoming validation
+class ServerMetricCreate(ServerMetricBase):
+    pass
+
+
+# 3. Database Model: Used exclusively by SQLAlchemy to interact with the database
+class ServerMetric(ServerMetricBase, table=True):
     __tablename__ = "server_metrics"
-    # Timescale relies heavily on timestamps for partitioning
-    time: datetime = Field(default_factory=datetime.utcnow, primary_key=True)
-    server_id: str
-    cpu_utilization: float
+    # The database auto-generates the timestamp when the record is created
+    time: datetime = Field(
+        default_factory=lambda: datetime.now(timezone.utc), primary_key=True
+    )
 
 
-# Setup Database and Timescale Hypertable on Startup
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    SQLModel.metadata.create_all(engine)
-    # Convert the standard Postgres table into a Timescale Hypertable
-    with Session(engine) as session:
-        session.exec(
-            text(
-                "SELECT create_hypertable('server_metrics', 'time', if_not_exists => TRUE);"
+    try:
+        async with engine.begin() as conn:
+            await conn.run_sync(SQLModel.metadata.create_all)
+        async with AsyncSession(engine) as session:
+            await session.execute(
+                text(
+                    "SELECT create_hypertable('server_metrics', 'time', if_not_exists => TRUE);"
+                )
             )
-        )
-        session.commit()
+            await session.commit()
+        logger.info("Database initialized successfully.")
+    except OperationalError as e:
+        logger.error(f"Critical Database Startup Error: {e}")
+        raise
     yield
 
 
-app = FastAPI(lifespan=lifespan)
+app = FastAPI(lifespan=lifespan, title="Secure Observability API")
+
+# Security: CORS Policy
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:3000"],
+    allow_credentials=True,
+    allow_methods=["GET", "POST"],
+    allow_headers=["*"],
+)
 
 
-@app.get("/items/{item_id}")
-def read_item(item_id: int):
-    return {"item_id": item_id, "status": "Found"}
+# Security: Mask database errors from end users
+@app.exception_handler(SQLAlchemyError)
+async def database_exception_handler(request: Request, exc: SQLAlchemyError):
+    logger.error(f"Database error on {request.url.path}: {exc}")
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "Internal server error. Please try again later."},
+    )
 
 
-@app.post("/metrics/")
-def record_metric(metric: ServerMetric):
-    with Session(engine) as session:
-        session.add(metric)
-        session.commit()
-    return {"status": "Metric recorded successfully"}
+# Dependency Injection for Database Sessions
+async def get_session():
+    async with AsyncSession(engine) as session:
+        yield session
 
 
+# API Endpoints
+@app.get("/")
+async def read_root():
+    return {"message": "Hello, telemetry!"}
+
+
+@app.post("/metrics/", status_code=201)
+async def record_metrics(
+    metrics: list[
+        ServerMetricCreate
+    ],  # <-- FastAPI strictly validates using the Create model
+    session: Annotated[AsyncSession, Depends(get_session)],
+):
+    """Accepts a list of metrics for highly efficient bulk database insertion."""
+
+    # Convert validated Pydantic API models into SQLAlchemy Database models
+    db_metrics = [ServerMetric.model_validate(metric) for metric in metrics]
+
+    session.add_all(db_metrics)
+    await session.commit()
+    return {"status": f"{len(metrics)} metrics recorded successfully"}
+
+
+# Instrument FastAPI application
 FastAPIInstrumentor.instrument_app(app)

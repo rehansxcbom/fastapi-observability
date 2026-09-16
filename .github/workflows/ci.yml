@@ -8,6 +8,10 @@ on:
     branches:
       - main
 
+# Security: Explicitly set minimum permissions for the GITHUB_TOKEN
+permissions:
+  contents: read
+
 jobs:
   test:
     name: Run Tests
@@ -32,6 +36,9 @@ jobs:
         run: |
           ruff check .
           ruff format --check .
+
+      - name: Security Scan (Bandit)
+        run: bandit -r . -c "pyproject.toml" || bandit -r . -ll
 
       - name: Run pytest
         run: |

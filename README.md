@@ -11,7 +11,11 @@ The stack implements the core pillars of observability:
 * **Tempo:** A distributed tracing system that receives and stores the generated trace spans via the OTLP gRPC protocol.
 * **Prometheus:** An open-source monitoring toolkit configured to scrape and store time-series metrics from the FastAPI service.
 * **Loki & Promtail:** Promtail acts as a local agent that automatically discovers and scrapes Docker container logs (such as Uvicorn output) and pushes them to Loki, a highly scalable log aggregation system.
+* **FastAPI & SQLModel:** Asynchronous web framework leveraging `asyncpg` for high-throughput non-blocking database queries and Pydantic for strict input validation.
+* **TimescaleDB:** A PostgreSQL extension optimized for time-series metrics, configured with composite primary keys (`time` + `server_id`) to prevent insertion collisions.
+* **OpenTelemetry:** Zero-code auto-instrumentation for tracing and metrics, routed centrally via the **OpenTelemetry Collector**.
 * **Grafana:** A unified visualization platform to query traces in Tempo, explore container logs in Loki, and build metric dashboards from Prometheus.
+* **Container Security:** Multi-stage builds utilizing isolated Python virtual environments (`/opt/venv`), non-root execution (`appuser`), dropped Linux capabilities, and healthchecks.
 
 ## Prerequisites
 
@@ -19,86 +23,107 @@ Ensure Docker and Docker Compose are installed on your local machine.
 
 ## Architecture
 
-This project utilizes Grafana, Loki, Tempo, Prometheus and OpenTelemetry to provide full, zero-code end user instrumentation and observability.
 
 ```mermaid
-graph TD
-User[Users] -- HTTP POST /metrics/ --> App[FastAPI Application]
+flowchart LR
+    Client([External Client])
 
-%% Database 
-App -- SQL Inserts --> DB[(TimescaleDB)] 
+    subgraph Application["Production Workload"]
+        direction TB
+        API["FastAPI\n(Async Web Server)"]
+        TSDB[("TimescaleDB\n(Time-Series Data)")]
+    end
 
-%% Backends (LGTM Stack) 
-subgraph "Infrastructure & Observability (Docker Compose)" 
-	App -- OTLP (Traces) --> Tempo[Tempo] 
-	App -- HTTP (Metrics) --> Prom[Prometheus] 
-	
-	App -- Docker Socket --> Promtail[Promtail] 
-	Promtail -- Pushes Logs --> Loki[Loki] 
-	
-	Tempo -- Datasource --> Grafana[Grafana] 
-	Prom -- Datasource --> Grafana 
-	Loki -- Datasource --> Grafana 
-	DB -- PostgreSQL Datasource --> Grafana 
-end
+    subgraph Telemetry["Data Collection"]
+        direction TB
+        OTel{{"OpenTelemetry\n(Traces & Metrics)"}}
+        Promtail{{"Promtail\n(Log Scraper)"}}
+    end
+
+    subgraph LGTM["Observability Backends"]
+        direction TB
+        Tempo[("Tempo\n(Traces)")]
+        Prom[("Prometheus\n(Metrics)")]
+        Loki[("Loki\n(Logs)")]
+    end
+
+    Grafana["Grafana\n(Unified UI)"]
+
+    %% Core Business Flow (Animated)
+    Client e1@-->|"HTTP POST\n/metrics/"| API
+    e1@{ animate: true }
+    
+    API e2@==>|"asyncpg\nParameterized INSERT"| TSDB
+    e2@{ animate: true, animation: slow }
+
+    %% Telemetry Routing (Animated)
+    API e3@-.->|"OTLP (gRPC)"| OTel
+    e3@{ animate: true }
+    
+    API e4@-.->|"stdout / stderr"| Promtail
+    e4@{ animate: true }
+
+    OTel e5@-.->|"OTLP Exporter"| Tempo
+    e5@{ animate: true }
+    
+    OTel e6@-.->|"Prometheus Exporter"| Prom
+    e6@{ animate: true }
+    
+    Promtail e7@-.->|"Push API"| Loki
+    e7@{ animate: true }
+
+    %% Dashboard Visualization (Static - represents queries, not streams)
+    Tempo -. "TraceQL" .-> Grafana
+    Prom -. "PromQL" .-> Grafana
+    Loki -. "LogQL" .-> Grafana
+    TSDB -. "SQL" .-> Grafana
 ```
+
+
 ## Services & Ports
 
-| Service         | Port   | Description                                          |
-| --------------- | ------ | ---------------------------------------------------- |
-| **FastAPI**     | `8000` | The core Python web application.                     |
-| **Grafana**     | `3000` | Unified UI for viewing dashboards and querying data. |
-| **Prometheus**  | `9090` | Time-series database UI for metrics.                 |
-| **Tempo**       | `3200` | Distributed tracing backend (receives on `4317`).    |
-| **Loki**        | `3100` | Log aggregation system.                              |
-| **TimescaleDB** | `5432` | PostgreSQL time-series database.                     |
+| Service | Port | Description |
+|---|---|---|
+| **FastAPI** | `8000` | Asynchronous core Python web API. |
+| **Grafana** | `3000` | Unified UI for dashboards, metrics, and traces. |
+| **Prometheus** | `9090` | Time-series database UI for performance counters. |
+| **Tempo** | `3200` | Distributed tracing backend UI. |
+| **OTel Collector** | `4317` | Central OTLP telemetry receiver (gRPC). |
+| **Loki** | `3100` | Log aggregation database. |
+| **TimescaleDB** | `5432` | PostgreSQL time-series storage backend. |
+
+## Security & Secrets Management
+
+This project enforces a **diskless secrets management** policy. Database credentials are never stored in static `.env` files or committed to source control. Instead, they are dynamically injected into the Docker environment directly from your terminal session via the `Makefile`. All endpoints interacting with the database utilize parameterized ORM queries to eliminate SQL injection vulnerabilities.
 
 ## Getting Started
 
 1. **Launch the Stack:**
-    Use the Makefile to launch the stack interactively (it will prompt you to securely type a database password):
-```bash
-	make up
-```
-Alternatively, for automation/CI pipelines, pass the password as a parameter:
-```bash
-	make up DB_PASS=your_secure_password_here
-```
+   Run the interactive Makefile command. It will prompt you to securely supply a database password while validating input to ensure it is not empty.
+   ```bash
+   make up
+   ```
 
+2. **Ingest Time-Series Metrics:**
+   Send a bulk metrics payload to the API. OpenTelemetry will automatically trace the request and the asynchronous database insert.
+   ```bash
+   curl -X POST [http://127.0.0.1:8000/metrics/](http://127.0.0.1:8000/metrics/) \
+        -H "Content-Type: application/json" \
+        -d '[{"server_id": "api-node-01", "cpu_utilization": 45.2}]'
+   ```
 
-2. **Generate Time-Series Data:** 
-	Fire off a POST request to ingest data into TimescaleDB. OpenTelemetry will automatically trace the HTTP request and the SQL `INSERT` statement.
-	```bash
-	 curl -X POST http://127.0.0.1:8000/metrics/ \
-     -H "Content-Type: application/json" \
-     -d '{"server_id": "api-node-02", "cpu_utilization": 88.5}'
-	```
-	
-3. **Visualize Data (Grafana):** 
-	Navigate to `http://127.0.0.1:3000`. Here you can configure PostgreSQL as a data source to graph your time-series data, and explore Tempo to see exactly how many milliseconds the SQL query took to execute.
-	
+3. **Explore Observability:**
+   Open `http://127.0.0.1:3000` (Grafana) to explore your persistent dashboards, query application logs via Loki, and inspect query latency via Tempo traces.
 
-## Local Development & Testing
+## Operational Makefile Commands
 
-This project uses `pytest` for automated testing and `ruff` for code formatting, enforced via GitHub Actions.
+Run `make help` to view all available commands. Key workflows include:
 
-The test suite utilizes `unittest.mock` to intercept database connections, meaning you can run the full test suite locally in milliseconds without needing to spin up the TimescaleDB Docker container.
-bash 
-# Run formatting, linting, and tests via the Makefile 
+*   **Rotate Database Password Live:** `make change-password`
+*   **Factory Reset (Wipe Volumes & Containers):** `make reset`
+*   **Run Local Checks (Linting, Formatting, & Testing):** `make check`
+*   **Watch Live Logs:** `make logs`
 
-```bash
-make check
-```
+## Testing & Dependency Injection
 
-## Extending the Application (Adding Endpoints)
-
-Because this project uses the `FastAPIInstrumentor`, any new routes you add to the application are automatically instrumented. You do not need to write custom trace or metric code for basic HTTP monitoring.
-
-To add a new endpoint, simply open `main.py` and define your new route above the `FastAPIInstrumentor.instrument_app(app)` line:
-
-
-```python
-@app.get("/items/{item_id}")
-def read_item(item_id: int):
-    return {"item_id": item_id, "status": "Found"}
-```
+The test suite uses FastAPI's native **Dependency Injection** (`app.dependency_overrides`) combined with `unittest.mock.AsyncMock`. This allows the test suite to execute locally in milliseconds without requiring an active TimescaleDB container instance, enabling true offline testing. Code formatting and linting are strictly enforced via Ruff.
