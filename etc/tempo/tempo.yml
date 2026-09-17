@@ -5,10 +5,21 @@ distributor:
   receivers:
     otlp:
       protocols:
+        http:
         grpc:
+          endpoint: 0.0.0.0:4317
+    zipkin:
+    jaeger:
+      protocols:
+        thrift_http:
+        grpc:
+        thrift_binary:
+        thrift_compact:
 
 storage:
   trace:
     backend: local
     local:
       path: /tmp/tempo/blocks
+    wal:
+      path: /tmp/tempo/wal

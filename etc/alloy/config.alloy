@@ -1,0 +1,29 @@
+// 1. Discover all Docker containers running on the host
+discovery.docker "local" {
+  host = "unix:///var/run/docker.sock"
+}
+
+// 2. Extract the container name for clean labels in Loki
+discovery.relabel "logs" {
+  targets = discovery.docker.local.targets
+  
+  rule {
+    source_labels = ["__meta_docker_container_name"]
+    regex         = "/(.*)"
+    target_label  = "container"
+  }
+}
+
+// 3. Read the logs directly from the Docker daemon
+loki.source.docker "local" {
+  host       = "unix:///var/run/docker.sock"
+  targets    = discovery.relabel.logs.output
+  forward_to = [loki.write.default.receiver]
+}
+
+// 4. Ship the logs to your local Loki instance
+loki.write "default" {
+  endpoint {
+    url = "http://loki:3100/loki/api/v1/push"
+  }
+}

@@ -1,7 +1,7 @@
 # ==========================================
 # Stage 1: Builder (Isolates dependencies in a venv)
 # ==========================================
-FROM python:3.11-slim as builder
+FROM python:3.11-slim AS builder
 
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
@@ -18,7 +18,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 # ==========================================
 # Stage 2: Runner (Production Image)
 # ==========================================
-FROM python:3.11-slim as runner
+FROM python:3.11-slim AS runner
 
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1

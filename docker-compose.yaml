@@ -7,8 +7,9 @@ services:
       - OTEL_SERVICE_NAME=my-fastapi-service
       - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4317
       - DB_USER=${DB_USER}
-      - DB_PASSWORD=${DB_PASSWORD}
       - DB_NAME=${DB_NAME}
+    secrets:
+      - db_password
     depends_on:
       timescaledb:
         condition: service_healthy
@@ -22,12 +23,18 @@ services:
         limits:
           cpus: '0.50'
           memory: 512M
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=2)\" || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
 
   otel-collector:
     image: otel/opentelemetry-collector:latest
     command: ["--config=/etc/otel-collector-config.yaml"]
     volumes:
-      - ./etc/otel-collector/otel-collector-config.yaml:/etc/otel-collector-config.yaml
+      - ./etc/otel-collector/otel-collector-config.yaml:/etc/otel-collector-config.yaml:ro
     ports:
       - "127.0.0.1:4317:4317"
       - "127.0.0.1:8889:8889"
@@ -36,20 +43,35 @@ services:
         condition: service_started
     restart: unless-stopped
 
+
+  # Tiny init service to fix volume permissions securely
+  init-tempo-perms:
+    image: alpine:latest
+    command: ["sh", "-c", "chown -R 10001:10001 /tmp/tempo"]
+    volumes:
+      - tempo_data:/tmp/tempo
+
   tempo:
     image: grafana/tempo:latest
+    user: "10001:10001"
     command: [ "-config.file=/etc/tempo.yml" ]
     volumes:
-      - ./etc/tempo/tempo.yml:/etc/tempo.yml
-      - tempo_data:/tmp/tempo/blocks
+      - ./etc/tempo/tempo.yml:/etc/tempo.yml:ro
+      - tempo_data:/tmp/tempo
     ports:
       - "127.0.0.1:3200:3200"
+    depends_on:
+      init-tempo-perms:
+        condition: service_completed_successfully
     restart: unless-stopped
 
   grafana:
     image: grafana/grafana:latest
     volumes:
       - grafana_data:/var/lib/grafana
+      - ./etc/grafana/provisioning:/etc/grafana/provisioning:ro
+      # Drop your exported dashboard JSON files into this folder:
+      - ./etc/grafana/provisioning/dashboards:/etc/grafana/provisioning/dashboards:ro
     ports:
       - "127.0.0.1:3000:3000"
     restart: unless-stopped
@@ -59,7 +81,7 @@ services:
     command:
       - "--config.file=/etc/prometheus/prometheus.yml"
     volumes:
-      - ./etc/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+      - ./etc/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - prometheus_data:/prometheus
     ports:
       - "127.0.0.1:9090:9090"
@@ -69,30 +91,37 @@ services:
     image: grafana/loki:latest
     command: -config.file=/etc/loki/local-config.yaml
     volumes:
-      - ./etc/loki/loki.yml:/etc/loki/local-config.yaml
-      - loki_data:/tmp/loki
+      - ./etc/loki/loki.yml:/etc/loki/local-config.yaml:ro
+      - loki_data:/loki
     ports:
       - "127.0.0.1:3100:3100"
     restart: unless-stopped
 
-  promtail:
-    image: grafana/promtail:latest
-    command: -config.file=/etc/promtail/config.yml
+  alloy:
+    image: grafana/alloy:latest
+    container_name: alloy
+    user: root
+    ports:
+      - "127.0.0.1:12345:12345"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
-      - /var/lib/docker/containers:/var/lib/docker/containers:ro
-      - ./etc/promtail/promtail.yml:/etc/promtail/config.yml
+      - ./etc/alloy/config.alloy:/etc/alloy/config.alloy:ro
+    command:
+      - run
+      - --server.http.listen-addr=0.0.0.0:12345
+      - /etc/alloy/config.alloy
     depends_on:
-      loki:
-        condition: service_started
+      - loki
     restart: unless-stopped
 
   timescaledb:
     image: timescale/timescaledb:latest-pg15
     environment:
       - POSTGRES_USER=${DB_USER}
-      - POSTGRES_PASSWORD=${DB_PASSWORD}
       - POSTGRES_DB=${DB_NAME}
+      - POSTGRES_PASSWORD_FILE=/run/secrets/db_password
+    secrets:
+      - db_password
     ports:
       - "127.0.0.1:5432:5432"
     volumes:
@@ -102,7 +131,6 @@ services:
       interval: 5s
       timeout: 5s
       retries: 5
-    restart: unless-stopped
 
 volumes:
   timescaledb_data:
@@ -110,3 +138,7 @@ volumes:
   prometheus_data:
   loki_data:
   tempo_data:
+
+secrets:
+  db_password:
+    environment: "DB_PASSWORD"

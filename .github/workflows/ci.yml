@@ -41,5 +41,6 @@ jobs:
         run: bandit -r . -c "pyproject.toml" || bandit -r . -ll
 
       - name: Run pytest
-        run: |
-          pytest
+        run: pytest
+        env: 
+          DB_PASSWORD: test_dummy_password

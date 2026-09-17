@@ -21,7 +21,7 @@ The stack implements the core pillars of observability:
 
 Ensure Docker and Docker Compose are installed on your local machine.
 
-## Architecture
+## System Flow
 
 
 ```mermaid
@@ -105,12 +105,11 @@ This project enforces a **diskless secrets management** policy. Database credent
    ```
 
 2. **Ingest Time-Series Metrics:**
-   Send a bulk metrics payload to the API. OpenTelemetry will automatically trace the request and the asynchronous database insert.
-   ```bash
-   curl -X POST [http://127.0.0.1:8000/metrics/](http://127.0.0.1:8000/metrics/) \
-        -H "Content-Type: application/json" \
-        -d '[{"server_id": "api-node-01", "cpu_utilization": 45.2}]'
-   ```
+  Use K6 to create 50 virtual users and 1m20s max duration (up to 50 looping VUs for 50s over 3 stages gracefulRampDown: 30s, gracefulStop: 30s)
+
+```bash
+  docker run --rm -i --network host -v $(pwd):/script grafana/k6 run /script/load-test.js
+```
 
 3. **Explore Observability:**
    Open `http://127.0.0.1:3000` (Grafana) to explore your persistent dashboards, query application logs via Loki, and inspect query latency via Tempo traces.

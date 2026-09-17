@@ -9,6 +9,7 @@ opentelemetry-instrumentation-sqlalchemy
 opentelemetry-exporter-otlp
 
 pytest
+pytest-asyncio
 httpx2
 ruff
 bandit

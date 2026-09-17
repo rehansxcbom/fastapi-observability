@@ -15,8 +15,10 @@ help:
 	@echo "  make check           - Run format checking, linting, and tests (simulates CI)"
 	@echo "  make change-password - Securely rotate the TimescaleDB admin password"
 
+# Suppress command echoing so the password isn't printed to the terminal history
 .PHONY: up
 up:
+	@echo "🚀 Securely booting observability stack..."
 	@PASS="$(DB_PASS)"; \
 	while [ -z "$$PASS" ]; do \
 		if ! read -s -p "🔑 Enter Database Password to start stack: " PASS; then \
@@ -27,32 +29,32 @@ up:
 			echo "❌ Error: Password cannot be empty. Please try again."; \
 		fi; \
 	done; \
-	DB_PASSWORD=$$PASS DB_USER=admin DB_NAME=timeseries docker-compose up -d --build; \
+	DB_PASSWORD=$$PASS DB_USER=admin DB_NAME=timeseries docker compose up -d --build; \
 	echo "✅ Stack launched successfully!"
 
 .PHONY: down
 down:
-	docker-compose down
+	docker compose down
 
 .PHONY: restart
 restart:
-	docker-compose down
-	docker-compose up -d --build
+	docker compose down
+	docker compose up -d --build
 
 .PHONY: reset
 reset:
 	@echo "⚠️  Wiping all containers and database volumes..."
-	docker-compose down -v --remove-orphans
+	docker compose down -v --remove-orphans
 	docker volume prune -f
 	@echo "✅ Reset complete! Run 'make up' to start fresh."
 
 .PHONY: logs
 logs:
-	docker-compose logs -f
+	docker compose logs -f
 
 .PHONY: test
 test:
-	pytest
+	OTEL_SDK_DISABLED=true DB_PASSWORD=mock_test_password DB_USER=postgres DB_NAME=telemetry pytest
 
 .PHONY: lint
 lint:
@@ -66,7 +68,8 @@ format:
 check:
 	ruff check .
 	ruff format --check .
-	pytest
+	OTEL_SDK_DISABLED=true DB_PASSWORD=mock_test_password DB_USER=postgres DB_NAME=telemetry pytest
+
 
 .PHONY: change-password
 change-password:
@@ -91,7 +94,7 @@ change-password:
 		fi; \
 	done; \
 	echo "🔄 Updating password in TimescaleDB..."; \
-	docker-compose exec -T timescaledb psql -U admin -d timeseries -c "ALTER USER admin WITH PASSWORD '$$PASS';" ; \
-	echo "🔄 Restarting FastAPI to use the new credentials..."; \
-	DB_PASSWORD=$$PASS DB_USER=admin DB_NAME=timeseries docker-compose up -d fastapi ; \
+	docker compose exec -T timescaledb psql -U admin -d timeseries -c "ALTER USER admin WITH PASSWORD '$$PASS';" ; \
+	echo "🔄 Restarting API to use the new credentials..."; \
+	DB_PASSWORD=$$PASS DB_USER=admin DB_NAME=timeseries docker compose up -d api ; \
 	echo "✅ Password changed successfully!"
