@@ -11,10 +11,6 @@ from main import app, get_session
 
 @pytest.fixture
 async def async_client():
-    """
-    Creates a reusable asynchronous test client.
-    Bypasses the network and calls the FastAPI app directly in memory.
-    """
     # FIX: Wrap the FastAPI app using ASGITransport
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://testserver") as client:
@@ -23,7 +19,6 @@ async def async_client():
 
 @pytest.mark.asyncio
 async def test_read_root(async_client: AsyncClient):
-    """Test the standard GET health endpoint"""
     response = await async_client.get("/")
 
     assert response.status_code == 200
@@ -32,7 +27,6 @@ async def test_read_root(async_client: AsyncClient):
 
 @pytest.mark.asyncio
 async def test_record_metrics_success(async_client: AsyncClient):
-    """Test the POST endpoint and verify database interactions"""
     mock_session = AsyncMock()
     mock_session.add_all = MagicMock()
 
@@ -75,7 +69,6 @@ async def test_record_metrics_validation_error(async_client: AsyncClient):
     mock_session.add_all = MagicMock()
     app.dependency_overrides[get_session] = lambda: mock_session
 
-    # We trigger a 422 by sending an impossible CPU percentage (150.0)
     response = await async_client.post(
         "/metrics/", json=[{"server_id": "api-node-01", "cpu_utilization": 150.0}]
     )

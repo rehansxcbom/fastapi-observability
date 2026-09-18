@@ -14,6 +14,7 @@ help:
 	@echo "  make format          - Run ruff to format Python files"
 	@echo "  make check           - Run format checking, linting, and tests (simulates CI)"
 	@echo "  make change-password - Securely rotate the TimescaleDB admin password"
+	@echo "  make load-test       - Run a k6 load test to generate traffic"
 
 # Suppress command echoing so the password isn't printed to the terminal history
 .PHONY: up
@@ -71,30 +72,10 @@ check:
 	OTEL_SDK_DISABLED=true DB_PASSWORD=mock_test_password DB_USER=postgres DB_NAME=telemetry pytest
 
 
-.PHONY: change-password
-change-password:
-	@PASS="$(NEW_PASS)"; \
-	echo "⚠️  This will change the password for the 'admin' database user."; \
-	while [ -z "$$PASS" ]; do \
-		if ! read -s -p "🔑 Enter NEW Database Password: " PASS; then \
-			echo -e "\n❌ Input cancelled!"; exit 1; \
-		fi; \
-		echo ""; \
-		if [ -z "$$PASS" ]; then \
-			echo "❌ Error: Password cannot be empty. Please try again."; \
-			continue; \
-		fi; \
-		if ! read -s -p "🔁 Confirm NEW Database Password: " PASS_CONFIRM; then \
-			echo -e "\n❌ Input cancelled!"; exit 1; \
-		fi; \
-		echo ""; \
-		if [ "$$PASS" != "$$PASS_CONFIRM" ]; then \
-			echo "❌ Error: Passwords do not match! Please try again."; \
-			PASS=""; \
-		fi; \
-	done; \
-	echo "🔄 Updating password in TimescaleDB..."; \
-	docker compose exec -T timescaledb psql -U admin -d timeseries -c "ALTER USER admin WITH PASSWORD '$$PASS';" ; \
-	echo "🔄 Restarting API to use the new credentials..."; \
-	DB_PASSWORD=$$PASS DB_USER=admin DB_NAME=timeseries docker compose up -d api ; \
-	echo "✅ Password changed successfully!"
+.PHONY: load-test
+load-test:
+	@echo "🔥 Generating traffic to spike CPU and Memory..."
+	docker run --rm -i --add-host host.docker.internal:host-gateway grafana/k6 run - < load-test.js
+
+
+

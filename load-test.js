@@ -1,7 +1,7 @@
 import http from 'k6/http';
 import { check, sleep } from 'k6';
 
-// 1. Configure the load test phases and pass/fail criteria
+// Configure the load test phases and pass/fail criteria
 export const options = {
   stages: [
     { duration: '10s', target: 50 }, // Ramp up to 50 concurrent virtual users
@@ -16,7 +16,7 @@ export const options = {
   },
 };
 
-// 2. Define the continuous behavior for each Virtual User
+// Define the continuous behavior for each Virtual User
 export default function () {
   // Use host.docker.internal if running k6 via Docker on Mac/Windows
   const url = 'http://host.docker.internal:8000/metrics/';

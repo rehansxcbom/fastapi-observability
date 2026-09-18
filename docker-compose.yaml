@@ -21,7 +21,7 @@ services:
     deploy:
       resources:
         limits:
-          cpus: '0.50'
+          cpus: '0.90'
           memory: 512M
     healthcheck:
       test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=2)\" || exit 1"]
@@ -70,7 +70,6 @@ services:
     volumes:
       - grafana_data:/var/lib/grafana
       - ./etc/grafana/provisioning:/etc/grafana/provisioning:ro
-      # Drop your exported dashboard JSON files into this folder:
       - ./etc/grafana/provisioning/dashboards:/etc/grafana/provisioning/dashboards:ro
     ports:
       - "127.0.0.1:3000:3000"
@@ -80,6 +79,7 @@ services:
     image: prom/prometheus:latest
     command:
       - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--web.enable-remote-write-receiver"
     volumes:
       - ./etc/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - prometheus_data:/prometheus
@@ -106,6 +106,8 @@ services:
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - ./etc/alloy/config.alloy:/etc/alloy/config.alloy:ro
+      - /sys:/sys:ro
+      - /proc:/proc:ro
     command:
       - run
       - --server.http.listen-addr=0.0.0.0:12345
@@ -131,6 +133,21 @@ services:
       interval: 5s
       timeout: 5s
       retries: 5
+
+  node-exporter:
+    image: prom/node-exporter:latest
+    container_name: node-exporter
+    restart: unless-stopped
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro
+    command:
+      - '--path.procfs=/host/proc'
+      - '--path.sysfs=/host/sys'
+      - '--collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)'
+    ports:
+      - "127.0.0.1:9100:9100"
 
 volumes:
   timescaledb_data:

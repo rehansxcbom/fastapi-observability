@@ -25,8 +25,7 @@ We require a foundational boilerplate for a time-series ingestion API. The syste
 ### 2.3 Container and Infrastructure Security
 
 * **Decision:** Unprivileged Multi-Stage Docker Builds.
-* **Rationale:** We utilize isolated Python virtual environments (`/opt/venv`) built in a compilation stage to keep the production image tiny and free of build tools. The runtime container executes as a non-root `appuser`.
-* **Decision:** Diskless Secrets Management.
+* **Rationale:** We utilize isolated Python virtual environments (`/opt/venv`) built in a compilation stage to keep the production image tiny and free of build tools.* **Decision:** Diskless Secrets Management.
 * **Rationale:** To prevent credential leakage, we forbid `.env` files for database passwords. Credentials are injected directly into the ephemeral Docker environment via interactive terminal prompts orchestrated by a `Makefile`.
 * **Decision:** Host Defense Mechanisms.
 * **Rationale:** Containers run with dropped Linux capabilities (`cap_drop: ALL`) to prevent container escapes, and memory limits are enforced to prevent application memory leaks from triggering host OS kernel panics.
