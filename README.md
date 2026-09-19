@@ -9,11 +9,10 @@ This repository provides a containerized FastAPI application fully instrumented 
 ## System Architecture
 
 The stack implements the core pillars of observability:
-* **FastAPI:** The primary Python application, utilizing zero-code instrumentation via the OpenTelemetry SDK to track requests without manual code changes.
+* **FastAPI & SQLModel:** Asynchronous web framework leveraging `asyncpg` for high-throughput non-blocking database queries and Pydantic for strict input validation.
 * **Tempo:** A distributed tracing system that receives and stores the generated trace spans via the OTLP gRPC protocol.
 * **Prometheus:** An open-source monitoring toolkit configured to scrape and store time-series metrics from the FastAPI service.
-* **Loki & Promtail:** Promtail acts as a local agent that automatically discovers and scrapes Docker container logs (such as Uvicorn output) and pushes them to Loki, a highly scalable log aggregation system.
-* **FastAPI & SQLModel:** Asynchronous web framework leveraging `asyncpg` for high-throughput non-blocking database queries and Pydantic for strict input validation.
+* **Loki & Alloy:** Alloy acts as a local agent that automatically discovers and scrapes Docker container logs (such as Uvicorn output) and pushes them to Loki, a highly scalable log aggregation system.
 * **TimescaleDB:** A PostgreSQL extension optimized for time-series metrics, configured with composite primary keys (`time` + `server_id`) to prevent insertion collisions.
 * **OpenTelemetry:** Zero-code auto-instrumentation for tracing and metrics, routed centrally via the **OpenTelemetry Collector**.
 * **Grafana:** A unified visualization platform to query traces in Tempo, explore container logs in Loki, and build metric dashboards from Prometheus.
@@ -41,7 +40,7 @@ flowchart LR
     subgraph Telemetry["Data Collection"]
         direction TB
         OTel{{"OpenTelemetry\n(Traces & Metrics)"}}
-        Promtail{{"Promtail\n(Log Scraper)"}}
+        Alloy{{"Alloy\n(Log Scraper)"}}
     end
 
     subgraph LGTM["Observability Backends"]
@@ -64,7 +63,7 @@ flowchart LR
     API e3@-.->|"OTLP (gRPC)"| OTel
     e3@{ animate: true }
     
-    API e4@-.->|"stdout / stderr"| Promtail
+    API e4@-.->|"stdout / stderr"| Alloy
     e4@{ animate: true }
 
     OTel e5@-.->|"OTLP Exporter"| Tempo
@@ -73,7 +72,7 @@ flowchart LR
     OTel e6@-.->|"Prometheus Exporter"| Prom
     e6@{ animate: true }
     
-    Promtail e7@-.->|"Push API"| Loki
+    Alloy e7@-.->|"Push API"| Loki
     e7@{ animate: true }
 
     %% Dashboard Visualization (Static - represents queries, not streams)

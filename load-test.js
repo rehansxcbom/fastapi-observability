@@ -11,7 +11,7 @@ export const options = {
   thresholds: {
     // We expect 95% of these bulk-insert requests to finish in under 200ms
     http_req_duration: ['p(95)<200'], 
-    // We expect a 0% failure rate (no 500s or 422s)
+    // We expect a 0% failure rate
     http_req_failed: ['rate==0'],     
   },
 };
@@ -19,14 +19,14 @@ export const options = {
 // Define the continuous behavior for each Virtual User
 export default function () {
   // Use host.docker.internal if running k6 via Docker on Mac/Windows
-  const url = 'http://host.docker.internal:8000/metrics/';
+  const url = 'http://host.docker.internal:8000/server-metrics/';
   
-  // Generate a dynamic batch of 100 metrics
+  // Generate a dynamic batch of 100 metrics matching the ServerMetricCreate schema
   const payload = [];
   for (let i = 0; i < 100; i++) {
     payload.push({
-      server_id: `node-${Math.floor(Math.random() * 1000).toString().padStart(4, '0')}`,
-      cpu_utilization: parseFloat((Math.random() * 100).toFixed(2))
+      user_id: `user-${Math.floor(Math.random() * 1000).toString().padStart(4, '0')}`,
+      user_token: parseFloat((Math.random() * 100).toFixed(2))
     });
   }
 
