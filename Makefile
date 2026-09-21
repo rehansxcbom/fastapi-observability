@@ -13,8 +13,8 @@ help:
 	@echo "  make lint            - Run ruff to check code style and apply fixes"
 	@echo "  make format          - Run ruff to format Python files"
 	@echo "  make check           - Run format checking, linting, and tests (simulates CI)"
-	@echo "  make change-password - Securely rotate the TimescaleDB admin password"
-	@echo "  make load-test       - Run a k6 load test to generate traffic"
+	@echo "  make load-test-k6    - Run a k6 load test to generate traffic"
+	@echo "  make load-test-py    - Run a locust load test to generate traffic"
 
 # Suppress command echoing so the password isn't printed to the terminal history
 .PHONY: up
@@ -72,10 +72,14 @@ check:
 	OTEL_SDK_DISABLED=true DB_PASSWORD=mock_test_password DB_USER=postgres DB_NAME=telemetry pytest
 
 
+.PHONY: speed-test
+speed-test:
+	@echo "🔥 Generating traffic to spike CPU and Memory..."
+	docker run --rm -i --add-host host.docker.internal:host-gateway grafana/k6 run - < speed-test.js
+
 .PHONY: load-test
 load-test:
 	@echo "🔥 Generating traffic to spike CPU and Memory..."
-	docker run --rm -i --add-host host.docker.internal:host-gateway grafana/k6 run - < load-test.js
-
+	locust -f load-test.py --headless --users 10 --spawn-rate 1 -H http://localhost:8000 --run-time 5m
 
 
