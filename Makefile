@@ -13,8 +13,8 @@ help:
 	@echo "  make lint            - Run ruff to check code style and apply fixes"
 	@echo "  make format          - Run ruff to format Python files"
 	@echo "  make check           - Run format checking, linting, and tests (simulates CI)"
-	@echo "  make load-test-k6    - Run a k6 load test to generate traffic"
-	@echo "  make load-test-py    - Run a locust load test to generate traffic"
+	@echo "  make speed-test      - Run a k6 load test to generate traffic"
+	@echo "  make load-test       - Run a locust load test to generate traffic"
 
 # Suppress command echoing so the password isn't printed to the terminal history
 .PHONY: up

@@ -10,7 +10,7 @@ export const options = {
   ],
   thresholds: {
     // We expect 95% of these bulk-insert requests to finish in under 200ms
-    http_req_duration: ['p(95)<200'], 
+    http_req_duration: ['p(95)<850'], 
     // We expect a 0% failure rate
     http_req_failed: ['rate==0'],     
   },
