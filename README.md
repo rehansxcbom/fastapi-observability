@@ -104,28 +104,51 @@ This project enforces a **diskless secrets management** policy. Database credent
 
 ## Getting Started
 
-1. **Launch the Stack:**
+1. **Describe your TimescaleDB config:**
+  Set up your TimescaleDB system which is omitted in etc/grafana/provisioning/datasources.yaml to avoid a static password for the database.
+
+  ```yaml
+  apiVersion: 1
+
+  datasources:
+    - name: TimescaleDB
+      type: postgres
+      access: proxy
+      url: localhost:5432
+      database: your_database_name
+      user: your_database_user
+      secureJsonData:
+        password: your_database_password
+      jsonData:
+        sslmode: disable # Options: disable, require, verify-ca, verify-full
+        postgresVersion: 1500 # Set according to your PostgreSQL version (e.g., 1400, 1500, 1600)
+        timescaledb: true # Enables TimescaleDB-specific optimizations in Grafana
+      editable: true
+```
+
+
+2. **Launch the Stack:**
    Run the interactive Makefile command. It will prompt you to securely supply a database password while validating input to ensure it is not empty.
 
   ```bash
    make up
   ```
 
-2. **Speed Test Server:**
+3. **Speed Test Server:**
   Use K6 to create 50 virtual users and 1m20s max duration (up to 50 looping VUs for 50s over 3 stages gracefulRampDown: 30s, gracefulStop: 30s)
 
   ```bash
    make load-test
   ```
 
-3. **Load Test Server:**
+4. **Load Test Server:**
   Use locust to create 10 virtual users and 5m max duration (up to 10 looping VUs for 5m making upto 70 requests) 
 
   ```bash
    make speed-test
    ```
 
-4. **Explore Observability:** :
+5. **Explore Observability:** :
    Open `http://127.0.0.1:3000` (Grafana) to explore your persistent dashboards, query application logs via Loki, and inspect query latency via Tempo traces.
 
 
