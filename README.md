@@ -9,6 +9,7 @@ This repository provides a containerized FastAPI application fully instrumented 
 ## System Architecture
 
 The stack implements the core pillars of observability:
+* Continuous Integration: This project uses a **continuous integration workflow** using GitHub Actions. This automated pipeline triggers whenever code is pushed to or pulled into the **main branch**. To maintain security best practices, the workflow strictly limits the **GITHUB\_TOKEN permissions** to reading repository contents. The execution environment runs on an **Ubuntu runner** and is specifically configured to utilize Python version 3.11 alongside pip caching. Throughout the process, the pipeline retrieves the code repository, installs necessary project dependencies, and verifies code standards utilizing **Ruff**. Finally, the system executes a **Bandit security scan** and runs a **pytest** test suite.
 * **FastAPI & SQLModel:** Asynchronous web framework leveraging `asyncpg` for high-throughput non-blocking database queries and Pydantic for strict input validation.
 * **Tempo:** A distributed tracing system that receives and stores the generated trace spans via the OTLP gRPC protocol.
 * **Prometheus:** An open-source monitoring toolkit configured to scrape and store time-series metrics from the FastAPI service.
@@ -115,8 +116,8 @@ This project enforces a **diskless secrets management** policy. Database credent
       type: postgres
       access: proxy
       url: localhost:5432
-      database: your_database_name
-      user: your_database_user
+      database: timeseries
+      user: admin
       secureJsonData:
         password: your_database_password
       jsonData:
